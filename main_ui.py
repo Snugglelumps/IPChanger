@@ -28,15 +28,16 @@ class MainUI:
         self.overview_frame.pack_propagate(True)
 
         # Simple container for paragraph frames (no scroll)
-        self.inner_frame = tk.Frame(self.overview_frame, background="#ffffff", bd=2, relief=tk.GROOVE)
+        self.inner_frame = tk.Frame(self.overview_frame, background="#f6f6f6", bd=2, relief=tk.GROOVE)
         self.inner_frame.pack(fill=tk.BOTH, expand=True)
 
         # Add a top spacer inside the paragraph frames container
-        self.top_spacer = tk.Frame(self.inner_frame, height=4, bg="#ffffff")
+        self.top_spacer = tk.Frame(self.inner_frame, height=4, bg="#f6f6f6")
         self.top_spacer.pack(fill=tk.X)
 
         self._paragraph_frames = []
         self._selected_frame = None
+        self._selected_alias = None  # Remember selected interface alias
 
         # Add labeled entry fields at specified positions
         self.ip_label = tk.Label(self.root, text="IP Address:")
@@ -66,7 +67,7 @@ class MainUI:
 
         # Info panel for selected interface
         self.info_panel = tk.Frame(self.root, bg="#e0e0e0", bd=2, relief=tk.SUNKEN)
-        self.info_panel.place(x=415, y=400, width=350, height=200)
+        self.info_panel.place(x=415, y=400, width=340, height=200)
 
         self.info_label = tk.Label(self.info_panel, text="", bg="#e0e0e0", anchor="nw", justify="left")
         self.info_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -129,6 +130,19 @@ class MainUI:
         for child in frame.winfo_children():
             child.configure(background="#cce6ff")
         self._selected_frame = frame
+        # Remember the alias of the selected interface
+        iface = getattr(frame, 'iface_info', None)
+        if iface:
+            self._selected_alias = iface.name
+    def restore_selection(self):
+        """Restore selection to the frame with the remembered alias, if it exists."""
+        if self._selected_alias:
+            for frame in self._paragraph_frames:
+                iface = getattr(frame, 'iface_info', None)
+                if iface and iface.name == self._selected_alias:
+                    self._select_frame(frame)
+                    self.update_info(frame)
+                    break
 
     def toggle_bottom_info(self, show=False, text=""):
         """Show or hide the bottom info/warning label."""
@@ -148,14 +162,24 @@ class MainUI:
             self.netmask_entry.delete(0, tk.END)
             self.netmask_entry.insert(0, iface.ipv4[0].netmask if iface.ipv4 else '')
             self.gateway_entry.delete(0, tk.END)
-            self.gateway_entry.insert(0, '')  # Placeholder
+            self.gateway_entry.insert(0, iface.gateway or '')  # Placeholder
             self.dns1_entry.delete(0, tk.END)
-            self.dns1_entry.insert(0, '')     # Placeholder
+            self.dns1_entry.insert(0, iface.dns1 or '')     # Placeholder
             self.dns2_entry.delete(0, tk.END)
-            self.dns2_entry.insert(0, '')     # Placeholder
+            self.dns2_entry.insert(0, iface.dns2 or '')     # Placeholder
 
-            # Set the info panel
-            self.info_label.config(text=f"Selected: {iface.name}")
+            # Set the info panel with all relevant iface data
+            label_width = 8
+            info_lines = [
+                f"{'Alias:'.ljust(label_width)} {iface.name}",
+                f"{'MAC:'.ljust(label_width)} {iface.mac or ''}",
+                f"{'IP:'.ljust(label_width)} {iface.ipv4[0].address if iface.ipv4 else ''}",
+                f"{'Netmask:'.ljust(label_width)} {iface.ipv4[0].netmask if iface.ipv4 else ''}",
+                f"{'Gateway:'.ljust(label_width)} {iface.gateway or ''}",
+                f"{'DNS1:'.ljust(label_width)} {iface.dns1 or ''}",
+                f"{'DNS2:'.ljust(label_width)} {iface.dns2 or ''}"
+            ]
+            self.info_label.config(font=('Courier', 10), text="\n".join(info_lines))
 
             # Show/hide bottom info label if link-local present
             has_link_local = iface.flags and "link-local" in iface.flags

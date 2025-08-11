@@ -28,13 +28,46 @@ class Interfaces:
         mac: Optional[str]
         ipv4: Optional[List['Interfaces.IPv4Data']]
         ipv6: Optional[List['Interfaces.IPv6Data']]
+        gateway: Optional[str] = None
+        dns1: Optional[str] = None
+        dns2: Optional[str] = None
         important: bool = True
         flags: List[str] = field(default_factory=list)  # <-- Add flags field
 
     @classmethod
     def get_info(cls):
+        import subprocess
+        import json
         def is_link_local(ip):
             return ip.startswith("169.254.")
+
+        # Fetch gateways using PowerShell
+        gw_cmd = [
+            "powershell", "-Command",
+            "Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Select-Object InterfaceAlias, NextHop | ConvertTo-Json"
+        ]
+        try:
+            gw_result = subprocess.run(gw_cmd, capture_output=True, text=True, check=True)
+            gw_data = json.loads(gw_result.stdout) if gw_result.stdout.strip() else []
+            if isinstance(gw_data, dict):
+                gw_data = [gw_data]
+            gateway_map = {g["InterfaceAlias"]: g["NextHop"] for g in gw_data if g.get("InterfaceAlias") and g.get("NextHop")}
+        except Exception:
+            gateway_map = {}
+
+        # Fetch DNS using PowerShell
+        dns_cmd = [
+            "powershell", "-Command",
+            "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object { $_.ServerAddresses -and $_.ServerAddresses.Count -gt 0 } | Select-Object InterfaceAlias, @{Name='DNSServers';Expression={ $_.ServerAddresses -join ',' }} | ConvertTo-Json"
+        ]
+        try:
+            dns_result = subprocess.run(dns_cmd, capture_output=True, text=True, check=True)
+            dns_data = json.loads(dns_result.stdout) if dns_result.stdout.strip() else []
+            if isinstance(dns_data, dict):
+                dns_data = [dns_data]
+            dns_map = {d["InterfaceAlias"]: d["DNSServers"].split(",") for d in dns_data if d.get("InterfaceAlias") and d.get("DNSServers")}
+        except Exception:
+            dns_map = {}
 
         interfaces = []
         addrs = psutil.net_if_addrs()
@@ -65,11 +98,19 @@ class Interfaces:
                     flags.append("non-link-local")
                 # You can add more logic here for "static", "dhcp", etc.
             important = cls._is_important(name, mac)
+            # Get gateway and DNS for this interface
+            gateway = gateway_map.get(name)
+            dns_list = dns_map.get(name, [])
+            dns1 = dns_list[0] if len(dns_list) > 0 else None
+            dns2 = dns_list[1] if len(dns_list) > 1 else None
             iface = cls.Info(
                 name=name,
                 mac=mac,
                 ipv4=ipv4s if ipv4s else None,
                 ipv6=ipv6s if ipv6s else None,
+                gateway=gateway,
+                dns1=dns1,
+                dns2=dns2,
                 important=important,
                 flags=flags
             )
@@ -80,7 +121,7 @@ class Interfaces:
     def _is_important(name, mac) -> bool:
         name_lower = name.lower()
         # Exclude common non-physical adapters by name
-        if mac and not any(x in name_lower for x in ["bluetooth", "vpn", "tunnel", "virtual", "wireless", "wi-fi", "wlan"]):
+        if mac and not any(x in name_lower for x in ["bluetooth", "vpn", "tunnel", "virtual", "wireless", "wi-fi", "wlan", "*"]):
             return True
         return False
 
