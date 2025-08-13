@@ -54,7 +54,7 @@ class IPUtil:
                 mac=mac
             )
             print(f"[DEBUG] Added interface: {iface} ({desc})")
-            interfaces.append(asdict(info))
+            interfaces.append(info)
         return interfaces
 
     @staticmethod
