@@ -19,54 +19,46 @@ import threading
 import time
 import subprocess
 
-def poll_interfaces(ui, interval=2):
-    while True:
-        system_ifaces = {iface.name: iface for iface in Interfaces.get_info()}
+prev_state = None
 
-        # Build a mapping of current UI frames by interface name
-        ui_frames = {getattr(frame, "iface_info", None).name: frame
-                     for frame in getattr(ui, '_paragraph_frames', [])
-                     if hasattr(frame, "iface_info") and getattr(frame, "iface_info", None)}
+def detect_change(ui):
+    global prev_state
+    # Get current system state as a tuple of (name, mac, ipv4, ipv6)
+    current_state = tuple(
+        (
+            iface.name,
+            iface.mac,
+            tuple((f.address, f.netmask) for f in iface.ipv4) if iface.ipv4 else None,
+            tuple((f.address, f.netmask) for f in iface.ipv6) if iface.ipv6 else None,
+        )
+        for iface in Interfaces.get_info()
+    )
+    changed = current_state != prev_state
+    prev_state = current_state
+    return changed
 
-        # Remove frames for interfaces that no longer exist
-        for name in list(ui_frames.keys()):
-            if name not in system_ifaces:
-                frame = ui_frames[name]
-                frame.destroy()
-                ui._paragraph_frames.remove(frame)
+def poll_interfaces(ui):
+    system_ifaces = {iface.name: iface for iface in Interfaces.get_info()}
 
-        # Add frames for new interfaces
-        for name, iface in system_ifaces.items():
-            if name not in ui_frames:
-                frame = ui.create_iface_frame(iface)
-                ui._paragraph_frames.append(frame)
+    def do_update():
+        for frame in list(ui._paragraph_frames):
+            frame.destroy()
+        ui._paragraph_frames.clear()
 
-        # Update frames if interface info has changed
-        for name, iface in system_ifaces.items():
-            if name in ui_frames:
-                frame = ui_frames[name]
-                old_iface = getattr(frame, "iface_info", None)
-                # Compare relevant fields (customize as needed)
-                if old_iface and (
-                    old_iface.mac != iface.mac or
-                    old_iface.ipv4 != iface.ipv4 or
-                    old_iface.ipv6 != iface.ipv6 or
-                    old_iface.important != iface.important
-                ):
-                    # Replace the frame
-                    idx = ui._paragraph_frames.index(frame)
-                    frame.destroy()
-                    new_frame = ui.create_iface_frame(iface)
-                    ui._paragraph_frames[idx] = new_frame
-
+        # Add frames for all current interfaces
+        for iface in system_ifaces.values():
+            frame = ui.create_iface_frame(iface)
+            ui._paragraph_frames.append(frame)
         # Restore selection and update info panel if needed
         if hasattr(ui, 'restore_selection'):
             ui.restore_selection()
-        # try:
-        #     populate_interface_status(ui)
-        # except Exception:
-        #     pass
 
+    ui.root.after(0, do_update)
+
+def poll_interfaces_loop(ui, interval=0.5):
+    while True:
+        if detect_change(ui):
+            poll_interfaces(ui)
         time.sleep(interval)
 
 def netmask_to_CIDR(netmask):
@@ -87,12 +79,14 @@ def populate_interface_status(ui, selected_frame=None): # I either give the sele
     iface = selected_frame.iface_info
     status = Interfaces.get_status(iface.name)
     if status:
+        flap_conversion = {0: "Down", 1: "Up"}
+        duplex_conversion = {0: "Unknown", 1: "Half-Duplex", 2: "Full-Duplex"}
         info_text = (
             f"Status for {iface.name}:\n"
-            f"  isup: {status.isup}\n"
-            f"  speed: {status.speed} Mbps\n"
-            f"  duplex: {status.duplex}\n"
-            f"  mtu: {status.mtu}"
+            f"  State: {flap_conversion.get(status.isup, 'No value returned')}\n"
+            f"  Speed: {status.speed} Mbps\n"
+            f"  Duplex: {duplex_conversion.get(status.duplex, 'No value returned')}\n"
+            f"  MTU: {status.mtu}"
         )
         ui.set_info_panel(info_text)
     else:
@@ -115,6 +109,7 @@ def handle_ip_mask_change(iface_name, ui_ip, ui_mask, ui_gateway=None):
     if ui_gateway:
         set_cmd[-1] += f" -DefaultGateway {ui_gateway}"
     subprocess.run(set_cmd, capture_output=True)
+    #poll_interfaces(ui)
 
 def handle_gateway_change(iface_name, ui_gateway):
     """Set gateway using PowerShell."""
@@ -123,6 +118,7 @@ def handle_gateway_change(iface_name, ui_gateway):
         f"Set-NetIPAddress -InterfaceAlias '{iface_name}' -DefaultGateway {ui_gateway}"
     ]
     subprocess.run(set_gw_cmd, capture_output=True)
+    #poll_interfaces(ui)
 
 def handle_dns_change(iface_name, ui_dns1, ui_dns2=None):
     """Set DNS servers using PowerShell."""
@@ -135,6 +131,7 @@ def handle_dns_change(iface_name, ui_dns1, ui_dns2=None):
         f"Set-DnsClientServerAddress -InterfaceAlias '{iface_name}' -ServerAddresses @({servers_str})"
     ]
     subprocess.run(set_dns_cmd, capture_output=True)
+    #poll_interfaces(ui)
 
 def new_button(ui):
     selected_frame = ui.is_selected()
@@ -203,7 +200,7 @@ if __name__ == "__main__":
 
     # Schedule the polling thread to start after the mainloop is running
     def start_polling():
-        t = threading.Thread(target=poll_interfaces, args=(ui,), daemon=True)
+        t = threading.Thread(target=poll_interfaces_loop, args=(ui,), daemon=True)
         t.start()
     ui.root.after(100, start_polling)
     ui.run()
