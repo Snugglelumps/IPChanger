@@ -4,7 +4,7 @@ from typing import List, Optional
 import psutil
 
 
-class Interfaces:
+class InterfaceInfo:
     @dataclass
     class IPv4Data:
         address: str
@@ -26,14 +26,15 @@ class Interfaces:
     class Info:
         name: str
         mac: Optional[str]
-        ipv4: Optional[List['Interfaces.IPv4Data']]
-        ipv6: Optional[List['Interfaces.IPv6Data']]
+        dhcp: bool
+        ipv4: Optional[List['InterfaceInfo.IPv4Data']]
+        ipv6: Optional[List['InterfaceInfo.IPv6Data']]
         gateway: Optional[str] = None
         dns1: Optional[str] = None
         dns2: Optional[str] = None
         status: Optional[str] = None
         important: bool = True
-        flags: List[str] = field(default_factory=list)  # <-- Add flags field
+        linklocal: bool = False  # <-- Add link-local flag
 
     @classmethod
     def get_info(cls):
@@ -70,7 +71,7 @@ class Interfaces:
         except Exception:
             dns_map = {}
 
-        interfaces = []
+        InterfaceInfo = []
         addrs = psutil.net_if_addrs()
         for name, addr_list in addrs.items():
             mac = None
@@ -90,15 +91,9 @@ class Interfaces:
                     ipv6s.append(cls.IPv6Data(address=addr.address, netmask=addr.netmask))
             # Sort IPv4s: non-link-local first
             ipv4s.sort(key=lambda x: is_link_local(x.address))
-            # Add flags
-            flags = []
-            if ipv4s:
-                if any(is_link_local(ip.address) for ip in ipv4s):
-                    flags.append("link-local")
-                else:
-                    flags.append("non-link-local")
-                # You can add more logic here for "static", "dhcp", etc.
+    
             important = cls._is_important(name, mac)
+            linklocal = cls._is_linklocal(ipv4s[0]) if ipv4s else False
             # Get gateway and DNS for this interface
             gateway = gateway_map.get(name)
             dns_list = dns_map.get(name, [])
@@ -106,6 +101,18 @@ class Interfaces:
             dns2 = dns_list[1] if len(dns_list) > 1 else None
             stat = psutil.net_if_stats().get(name)
             status = 'Up' if stat and stat.isup else 'Down'
+            # Determine DHCP status
+            dhcp = False
+            try:
+                dhcp_cmd = [
+                    "powershell", "-Command",
+                    f"(Get-NetIPInterface -InterfaceAlias '{name}' -AddressFamily IPv4).Dhcp"
+                ]
+                dhcp_result = subprocess.run(dhcp_cmd, capture_output=True, text=True, check=True)
+                dhcp_status = dhcp_result.stdout.strip()
+                dhcp = dhcp_status.lower() == "enabled"
+            except Exception:
+                dhcp = False
             iface = cls.Info(
                 name=name,
                 mac=mac,
@@ -115,11 +122,12 @@ class Interfaces:
                 dns1=dns1,
                 dns2=dns2,
                 important=important,
-                flags=flags,
-                status=status
+                linklocal=linklocal,
+                status=status,
+                dhcp=dhcp  # <-- add this
             )
-            interfaces.append(iface)
-        return interfaces
+            InterfaceInfo.append(iface)
+        return InterfaceInfo
 
     @staticmethod
     def _is_important(name, mac) -> bool:
@@ -128,13 +136,20 @@ class Interfaces:
         if mac and not any(x in name_lower for x in ["bluetooth", "vpn", "tunnel", "virtual", "wireless", "wi-fi", "wlan", "*"]):
             return True
         return False
+    
+    @staticmethod
+    def _is_linklocal(ipv4: 'IPv4Data') -> bool:
+        """Check if the given IPv4 address is link-local."""
+        if ipv4.address.startswith("169.254."):
+            return True
+        return False
 
     @staticmethod
-    def get_status(name: str) -> 'Interfaces.Status':
+    def get_status(name: str) -> 'InterfaceInfo.Status':
         stats = psutil.net_if_stats()
         stat = stats.get(name)
         if stat:
-            return Interfaces.Status(
+            return InterfaceInfo.Status(
                 isup=stat.isup,
                 speed=stat.speed,
                 duplex=stat.duplex,

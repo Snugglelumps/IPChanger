@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import font
 
 class MainUI:
     # --- Class attributes ---
@@ -16,7 +17,7 @@ class MainUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Main UI")
-        self.root.geometry("865x700")
+        self.root.geometry("850x700")
 
         # Overview region frame using place for x position
         self.overview_frame = tk.Frame(self.root, width=300, height=670)
@@ -85,6 +86,10 @@ class MainUI:
         self.cfg_button = tk.Button(self.root, text="Configure Interface")
         self.cfg_button.place(x=self.x2 + 150, y=250, width=150)  # Adjust x/y as needed
 
+        # Info button at the bottom right
+        self.info_button = tk.Button(self.root, text="Info", command=self.show_info_window)
+        self.info_button.place(x=750, y=660, width=80, height=30)  # Adjust x/y as needed
+
         self._on_select_callback = None
 
     # --- Public methods ---
@@ -129,7 +134,7 @@ class MainUI:
                     #self.set_entry_fields(frame) # dont do that lol...
                     break
 
-    def insert_iface_frame(self, info, iface_info=None, important=False):
+    def insert_iface_frame(self, info, iface_info=None, important=False, linklocal=False):
         """
         Insert a paragraph (IP info chunk) as a selectable Frame in the overview_frame.
         info: str (should be a full paragraph for one interface)
@@ -149,6 +154,11 @@ class MainUI:
         # Attach the iface_info object to the frame
         frame.iface_info = iface_info
 
+        if linklocal:
+            star_font = font.Font(size=12, weight="bold")
+            star_label = tk.Label(frame, text="***", fg="red", font=star_font, bg=bg_color, anchor="e", justify="right")
+            star_label.place(x=250, y=0) # magic x val, sorry.
+
         def on_select(event, f=frame):
             self._select_frame(f)
             self.set_entry_fields(f)
@@ -164,14 +174,16 @@ class MainUI:
         netmask_str = ', '.join(f.netmask or 'N/A' for f in iface.ipv4) if iface.ipv4 else 'N/A'
         ipv6_str = ', '.join(f.address for f in iface.ipv6) if iface.ipv6 else 'N/A'
         mac_str = iface.mac if iface.mac else 'N/A'
+        dhcp_str = "DHCP" if getattr(iface, "dhcp", False) else "Static"
         paragraph = (
             f"Interface: {iface.name}\n"
             f"  IPv4: {ipv4_str}\n"
             f"  Netmask: {netmask_str}\n"
             f"  IPv6: {ipv6_str}\n"
-            f"  MAC: {mac_str}"
+            f"  MAC: {mac_str}\n"
+            f"  DHCP: {dhcp_str}"
         )
-        frame = self.insert_iface_frame(paragraph, important=iface.important)
+        frame = self.insert_iface_frame(paragraph, iface_info=iface, important=iface.important, linklocal=iface.linklocal)
         frame.iface_info = iface
         return frame
 
@@ -190,20 +202,6 @@ class MainUI:
             self.dns1_entry.insert(0, iface.dns1 or '')     # Placeholder
             self.dns2_entry.delete(0, tk.END)
             self.dns2_entry.insert(0, iface.dns2 or '')     # Placeholder
-
-            # Show/hide bottom info label if link-local present
-            has_link_local = iface.flags and "link-local" in iface.flags
-            if has_link_local:
-                self.toggle_bottom_info(
-                    show=True,
-                    text=(
-                        "Notice: This interface has a link-local (APIPA) address (169.254.x.x).\n"
-                        "A link-local address is automatically assigned when DHCP fails.\n"
-                        "When you set a static IP with this application, any link-local address will be removed.\n"
-                    )
-                )
-            else:
-                self.toggle_bottom_info(show=False)
 
     # --- Private methods ---
 
@@ -224,3 +222,54 @@ class MainUI:
         iface = getattr(frame, 'iface_info', None)
         if iface:
             self._selected_alias = iface.name
+
+    def show_info_window(self):
+        info_win = tk.Toplevel(self.root)
+        info_win.title("Information")
+        info_window_width = 400
+        info_window_height = 420
+        info_win.geometry(f"{info_window_width}x{info_window_height}")  # Adjust size as needed
+
+        big_font = font.Font(size=14, weight="bold")
+        APIPA_y = 275
+        star_label = tk.Label(info_win, text="***", fg="red", font=big_font, anchor="w", justify="left")
+        star_label.place(x=10, y=APIPA_y)
+        APIPA_text = (
+            "Indicates an interface has a link-local address (169.254.x.x).\n"
+            "When you set an IP with this application any link-local address\n"
+            "will be removed.\n"
+            "\n"
+            "\n"
+            "Link-local (APIPA) addresses are automatically assigned by\n"
+            "Windows when DHCP fails, or the interface is misconfigured,\n"
+            "down, or disconnected."
+        )
+        APIPA_label = tk.Label(info_win, text=APIPA_text, justify="left", anchor="nw")
+        APIPA_label.place(x=45, y=APIPA_y)
+
+        # CIDR to Netmask table
+        cidr_table = [
+            ("/8",   " 255.0.0.0"),
+            ("/16",  " 255.255.0.0"),
+            ("/24",  " 255.255.255.0"),
+            ("/25",  " 255.255.255.128"),
+            ("/26",  " 255.255.255.192"),
+            ("/27",  " 255.255.255.224"),
+            ("/28",  " 255.255.255.240"),
+            ("/29",  " 255.255.255.248"),
+            ("/30",  " 255.255.255.252"),
+            ("/32",  " 255.255.255.255"),
+        ]
+
+        table_font = font.Font(info_win, family="Courier", size=10)
+        longest_row = max([f"{cidr:<5}  {netmask}" for cidr, netmask in cidr_table], key=len)
+        table_width = table_font.measure(longest_row)
+        CIDR_table_x = (info_window_width - table_width) // 2
+
+        table_header = tk.Label(info_win, text="CIDR    Netmask", font=("consolas", 10, "bold"), anchor="w", justify="center")
+        table_header.place(x=CIDR_table_x, y=10)
+
+        for i, (cidr, netmask) in enumerate(cidr_table):
+            row = f"{cidr:<5}  {netmask}"
+            row_label = tk.Label(info_win, text=row, font=("consolas", 10), anchor="w", justify="center")
+            row_label.place(x=CIDR_table_x, y=40 + i*20)

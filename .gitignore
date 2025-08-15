@@ -1,7 +1,5 @@
-<<<<<<< HEAD
 #dirs
 __pycache__/
-=======
 #dir
 .vscode/
->>>>>>> 88ff16a4f956cc4473faf22db193fafb8e4e226a
+files/
