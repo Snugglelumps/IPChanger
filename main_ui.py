@@ -3,25 +3,31 @@ from tkinter import font
 
 class MainUI:
     # --- Class attributes ---
-    x1 = 15  # Class attribute for overview frame x position
-    x2 = 365
-    x3 = 565
+    main_width = 650
+    main_height = 700
+    overview_frame_width = 250
+    overview_frame_height = main_height - 20
 
-    y1 = 15
+    field_width = 25
+    field_width_pixels = field_width * 7  # Approximate pixel width (7 pixels per character) for default font
+
+    x1 = 10  # Class attribute for overview frame x position
+    x2 = x1 + overview_frame_width + 20
+    x3 = main_width - field_width_pixels
+
+    y1 = 10
     y2 = 65
     y3 = 115
-
-    field_width = 30
 
     # --- Initialization ---
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Main UI")
-        self.root.geometry("850x700")
+        self.root.title("Alex's IP Changer: Version 2.0")
+        self.root.geometry(f"{self.main_width}x{self.main_height}")
 
         # Overview region frame using place for x position
-        self.overview_frame = tk.Frame(self.root, width=300, height=670)
-        self.overview_frame.place(x=self.x1, y=self.y1, width=300, height=670)
+        self.overview_frame = tk.Frame(self.root, width=self.overview_frame_width, height=self.overview_frame_height)
+        self.overview_frame.place(x=self.x1, y=self.y1, width=self.overview_frame_width, height=self.overview_frame_height)
         self.overview_frame.pack_propagate(True)
 
         # Simple container for paragraph frames (no scroll)
@@ -64,31 +70,21 @@ class MainUI:
 
         # Info panel for selected interface
         self.info_panel = tk.Frame(self.root, bg="#e0e0e0", bd=2, relief=tk.SUNKEN)
-        self.info_panel.place(x=415, y=400, width=340, height=200)
+        self.info_panel.place(x=self.x2, y=300, width=self.main_width - self.x2 - 20, height=142)
 
         self.info_label = tk.Label(self.info_panel, text="", bg="#e0e0e0", anchor="nw", justify="left")
         self.info_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Warning/info label at the bottom (initially hidden)
-        self.extra_info = tk.Label(
-            self.root,
-            text="",
-            fg="#b22222",  # dark red for warning
-            bg="#f0f0f0",
-            anchor="w",
-            justify="left",
-            wraplength=700  # <-- Set wraplength to desired width in pixels
-        )
-        self.extra_info.place(x=self.x2, y=570, width=770, height=30)
-        self.extra_info.place_forget()  # Hide by default
-
         # Add CFG button (place it wherever you want, here next to IP Address label)
+        button_width = 150
+        center_x = (self.main_width - self.x2 - 20) // 2
+        button_x = self.x2 + center_x - (button_width // 2)
         self.cfg_button = tk.Button(self.root, text="Configure Interface")
-        self.cfg_button.place(x=self.x2 + 150, y=250, width=150)  # Adjust x/y as needed
+        self.cfg_button.place(x=button_x, y=250, width=button_width)
 
         # Info button at the bottom right
         self.info_button = tk.Button(self.root, text="Info", command=self.show_info_window)
-        self.info_button.place(x=750, y=660, width=80, height=30)  # Adjust x/y as needed
+        self.info_button.place(x=self.main_width - 90, y=self.main_height - 40, width=80, height=30)  # Adjust x/y as needed
 
         self._on_select_callback = None
 
@@ -98,49 +94,33 @@ class MainUI:
         self.root.mainloop()
 
     def set_on_select_callback(self, func):
-        """Set the callback function to be called when an interface is selected."""
         self._on_select_callback = func
 
     def set_cfg_command(self, func):
-        """Set the command (callback) for the CFG button."""
         self.cfg_button.config(command=func)
 
     def set_info_panel(self, text):
-        """Set the info panel's label to the supplied text."""
         self.info_label.config(text=text)
 
-    def toggle_bottom_info(self, show=False, text=""):
-        """Show or hide the bottom info/warning label."""
-        if show:
-            self.extra_info.config(text=text)
-            self.extra_info.place(x=self.x2-30, y=640, width=700, height=60)
-        else:
-            self.extra_info.place_forget()
-
     def is_selected(self):
-        """
-        Return the currently selected paragraph frame, or None if nothing is selected.
-        Room for additional logic or check in the future.
-        """
         return self._selected_frame
 
     def restore_selection(self):
-        """Restore selection to the frame with the remembered alias, if it exists."""
         if self._selected_alias:
             for frame in self._paragraph_frames:
                 iface = getattr(frame, 'iface_info', None)
                 if iface and iface.name == self._selected_alias:
                     self._select_frame(frame)
-                    #self.set_entry_fields(frame) # dont do that lol...
                     break
 
-    def insert_iface_frame(self, info, iface_info=None, important=False, linklocal=False):
+    def insert_iface_frame(self, info, iface_info=None):
         """
         Insert a paragraph (IP info chunk) as a selectable Frame in the overview_frame.
         info: str (should be a full paragraph for one interface)
         iface_info: the data object for this interface
         important: bool (optional, can highlight differently)
         """
+        important = getattr(iface_info, "important", False)
         bg_color = "#ffffff" if important else "#e0e0e0"
         fg_color = "#000000" if important else "#888888"
         frame = tk.Frame(self.inner_frame, bd=2, relief=tk.RIDGE, background=bg_color)
@@ -154,14 +134,8 @@ class MainUI:
         # Attach the iface_info object to the frame
         frame.iface_info = iface_info
 
-        if linklocal:
-            star_font = font.Font(size=12, weight="bold")
-            star_label = tk.Label(frame, text="***", fg="red", font=star_font, bg=bg_color, anchor="e", justify="right")
-            star_label.place(x=250, y=0) # magic x val, sorry.
-
         def on_select(event, f=frame):
             self._select_frame(f)
-            self.set_entry_fields(f)
             if self._on_select_callback:
                 self._on_select_callback(f)
         frame.bind("<Button-1>", on_select, add="+")
@@ -174,22 +148,30 @@ class MainUI:
         netmask_str = ', '.join(f.netmask or 'N/A' for f in iface.ipv4) if iface.ipv4 else 'N/A'
         ipv6_str = ', '.join(f.address for f in iface.ipv6) if iface.ipv6 else 'N/A'
         mac_str = iface.mac if iface.mac else 'N/A'
-        dhcp_str = "DHCP" if getattr(iface, "dhcp", False) else "Static"
+        linklocal_str = " (link local)" if getattr(iface, "linklocal", False) else ""
         paragraph = (
             f"Interface: {iface.name}\n"
-            f"  IPv4: {ipv4_str}\n"
+            f"  IPv4: {ipv4_str}{linklocal_str}\n"
             f"  Netmask: {netmask_str}\n"
             f"  IPv6: {ipv6_str}\n"
             f"  MAC: {mac_str}\n"
-            f"  DHCP: {dhcp_str}"
         )
-        frame = self.insert_iface_frame(paragraph, iface_info=iface, important=iface.important, linklocal=iface.linklocal)
+        frame = self.insert_iface_frame(paragraph, iface_info=iface)
         frame.iface_info = iface
         return frame
 
-    def set_entry_fields(self, frame):
+    def refresh_ifaces(self, iface_list):
+        """Redraw all interface frames from a list of iface objects."""
+        for frame in list(self._paragraph_frames):
+            frame.destroy()
+        self._paragraph_frames.clear()
+        for iface in iface_list:
+            self.create_iface_frame(iface)
+        if hasattr(self, 'restore_selection'):
+            self.restore_selection()
+
+    def refresh_entries(self, iface):
         """Populate the info fields and info panel using the iface_info attached to the frame."""
-        iface = getattr(frame, 'iface_info', None)
         if iface:
             # Set the entry fields
             self.ip_entry.delete(0, tk.END)
@@ -202,6 +184,22 @@ class MainUI:
             self.dns1_entry.insert(0, iface.dns1 or '')     # Placeholder
             self.dns2_entry.delete(0, tk.END)
             self.dns2_entry.insert(0, iface.dns2 or '')     # Placeholder
+
+    def refresh_status(self, iface, status):
+        """Update the info panel from an iface object."""
+        if status:
+            flap_conversion = {0: "Down", 1: "Up"}
+            duplex_conversion = {0: "Unknown", 1: "Half-Duplex", 2: "Full-Duplex"}
+            info_text = (
+                f"Status for {iface.name}:\n"
+                f"  State: {flap_conversion.get(status.isup, 'No value returned')}\n"
+                f"  Speed: {status.speed} Mbps\n"
+                f"  Duplex: {duplex_conversion.get(status.duplex, 'No value returned')}\n"
+                f"  DHCP: {'Enabled' if getattr(iface, 'dhcp', False) else 'Disabled'}\n"
+            )
+            self.set_info_panel(info_text)
+        else:
+            self.set_info_panel(f"No status found for {iface.name}.")
 
     # --- Private methods ---
 
@@ -230,22 +228,27 @@ class MainUI:
         info_window_height = 420
         info_win.geometry(f"{info_window_width}x{info_window_height}")  # Adjust size as needed
 
-        big_font = font.Font(size=14, weight="bold")
+        bold = font.Font(size=10, weight="bold")
         APIPA_y = 275
-        star_label = tk.Label(info_win, text="***", fg="red", font=big_font, anchor="w", justify="left")
-        star_label.place(x=10, y=APIPA_y)
+        APIPA_x = 30
+
+        # Bold (link-local)
+        linklocal_label = tk.Label(info_win, text="(link-local)", font=bold, justify="left", anchor="nw")
+        linklocal_label.place(x=APIPA_x, y=APIPA_y)
+
+        # The rest of the APIPA text
         APIPA_text = (
-            "Indicates an interface has a link-local address (169.254.x.x).\n"
-            "When you set an IP with this application any link-local address\n"
-            "will be removed.\n"
+            "Indicates an interface has a link-local address (169.254.x.x). "
+            "When you set an IP with this application any link-local address "
+            "will be removed. "
             "\n"
             "\n"
-            "Link-local (APIPA) addresses are automatically assigned by\n"
-            "Windows when DHCP fails, or the interface is misconfigured,\n"
+            "Link-local (APIPA) addresses are automatically assigned by "
+            "Windows when DHCP fails, or the interface is misconfigured, "
             "down, or disconnected."
         )
-        APIPA_label = tk.Label(info_win, text=APIPA_text, justify="left", anchor="nw")
-        APIPA_label.place(x=45, y=APIPA_y)
+        APIPA_label = tk.Label(info_win, text=APIPA_text, wraplength=info_window_width - 2 * APIPA_x, justify="left", anchor="nw")
+        APIPA_label.place(x=APIPA_x, y=APIPA_y + 20)
 
         # CIDR to Netmask table
         cidr_table = [

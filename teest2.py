@@ -1,8 +1,10 @@
-# Remove all existing IPv4 addresses
-Get-NetIPAddress -InterfaceAlias "DUT" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
+import tkinter as tk
+from tkinter import font
 
-# Disable DHCP
-Set-NetIPInterface -InterfaceAlias "DUT" -Dhcp Disabled
-
-# Set new static IP and mask
-New-NetIPAddress -InterfaceAlias "DUT" -IPAddress 192.168.1.100 -PrefixLength 24
+root = tk.Tk()
+field_width = 25
+entry_font = font.Font(root=root, font=("TkDefaultFont", 10))  # Use your actual font if different
+sample_text = "0" * field_width
+pixel_width = entry_font.measure(sample_text)
+print(f"Entry width for {field_width} chars: {pixel_width} pixels")
+root.destroy()
