@@ -17,6 +17,8 @@ from main_ui import MainUI
 from interfacemanager import InterfaceInfo, ConfigureInterface
 import threading
 import time
+from not_snake_game import SnakeGame
+import tkinter as tk 
 
 prev_state = None
 
@@ -45,7 +47,7 @@ def has_syntax_errors(interface):
 
 def fade_in_info(ui, selected_frame=None):
     def worker():
-        time.sleep(7)
+        time.sleep(10)
         ui.root.after(0, lambda: update_ui(ui))
     threading.Thread(target=worker, daemon=True).start()
 
@@ -115,6 +117,11 @@ def update_ui(ui):
             ui.refresh_entries(iface)
             ui.refresh_status(iface, InterfaceInfo.get_status(iface.name))
 
+def open_snake():
+    snake_win = tk.Toplevel(ui.root)
+    snake_win.title("Snake")
+    SnakeGame(snake_win)
+
 if __name__ == "__main__":
     ui = MainUI()
     print("UI initialized")
@@ -127,4 +134,5 @@ if __name__ == "__main__":
             InterfaceInfo.get_status(frame.iface_info.name)
         )
     ))
+    ui.set_snake_callback(open_snake)
     ui.run()

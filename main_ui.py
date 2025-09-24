@@ -30,9 +30,29 @@ class MainUI:
         self.overview_frame.place(x=self.x1, y=self.y1, width=self.overview_frame_width, height=self.overview_frame_height)
         self.overview_frame.pack_propagate(True)
 
-        # Simple container for paragraph frames (no scroll)
-        self.inner_frame = tk.Frame(self.overview_frame, background="#f6f6f6", bd=2, relief=tk.GROOVE)
-        self.inner_frame.pack(fill=tk.BOTH, expand=True)
+        # Scrollable container for paragraph frames
+        self.canvas = tk.Canvas(self.overview_frame, background="#f6f6f6", bd=2, relief=tk.GROOVE, highlightthickness=0)
+        self.scrollbar = tk.Scrollbar(self.overview_frame, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.inner_frame = tk.Frame(self.canvas, background="#f6f6f6")
+        self.inner_frame_id = self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+
+        def _on_frame_configure(event):
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.inner_frame.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(event):
+            self.canvas.itemconfig(self.inner_frame_id, width=event.width)
+        self.canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Optional: enable mousewheel scrolling
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         # Add a top spacer inside the paragraph frames container
         self.top_spacer = tk.Frame(self.inner_frame, height=4, bg="#f6f6f6")
@@ -87,6 +107,7 @@ class MainUI:
         self.info_button.place(x=self.main_width - 90, y=self.main_height - 40, width=80, height=30)  # Adjust x/y as needed
 
         self._on_select_callback = None
+        self.info_window_open = False
 
     # --- Public methods ---
 
@@ -221,11 +242,19 @@ class MainUI:
         if iface:
             self._selected_alias = iface.name
 
+    def set_snake_callback(self, func):
+        """Set the callback for the Snake button in the info window."""
+        self._snake_callback = func
+
     def show_info_window(self):
+        if self.info_window_open:
+            return  # Already open, do nothing
+
+        self.info_window_open = True
         info_win = tk.Toplevel(self.root)
         info_win.title("Information")
         info_window_width = 400
-        info_window_height = 420
+        info_window_height = 500  # Increased to fit the button
         info_win.geometry(f"{info_window_width}x{info_window_height}")  # Adjust size as needed
 
         bold = font.Font(size=10, weight="bold")
@@ -276,3 +305,13 @@ class MainUI:
             row = f"{cidr:<5}  {netmask}"
             row_label = tk.Label(info_win, text=row, font=("consolas", 10), anchor="w", justify="center")
             row_label.place(x=CIDR_table_x, y=40 + i*20)
+
+        # --- Snake Button ---
+        snake_btn = tk.Button(info_win, text="Snake", command=lambda: self._snake_callback() if hasattr(self, "_snake_callback") and self._snake_callback else None)
+        snake_btn.place(x=(info_window_width - 100)//2, y=450, width=100, height=30)
+
+        def on_close():
+            self.info_window_open = False
+            info_win.destroy()
+
+        info_win.protocol("WM_DELETE_WINDOW", on_close)
